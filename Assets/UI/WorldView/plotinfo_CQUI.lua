@@ -198,6 +198,69 @@ function ShowCitizens()
 end
 
 -- ===========================================================================
+--  CQUI modified GetPlotYields function
+-- ===========================================================================
+--[[
+function GetPlotYields(plotId:number, yields:table)
+
+	local plot:table= Map.GetPlotByIndex(plotId);
+
+	-- Do not show plot yields for districts
+	local districtType = plot:GetDistrictType();
+	if districtType ~= -1 and districtType ~= CITY_CENTER_DISTRICT_INDEX then
+		--return;
+	end
+
+    local district = nil;
+    local city = Cities.GetPlotPurchaseCity( plot );
+    if (districtType ~= -1) then
+        district = city:GetDistricts():FindID(plot:GetDistrictID());
+    end
+
+	for row in GameInfo.Yields() do
+		local yieldAmt:number = plot:GetYield(row.Index);
+
+        if (district) then
+            if (districtType ~= CITY_CENTER_DISTRICT_INDEX) then
+                yieldAmt = district:GetYield(row.Index);
+            else
+                yieldAmt = yieldAmt + district:GetYield(row.Index);
+            end
+            --yieldAmt = yieldAmt + plot:GetAdjacencyYield(plot:GetOwner(), city, GameInfo.Districts[districtType], row.Index);
+            
+            
+            local buildings = city:GetBuildings():GetBuildingsAtLocation(plot);
+            for i, type in ipairs(buildings) do
+                local building	= GameInfo.Buildings[type].Index;
+                local buildingYield = city:GetBuildingYield(building, row.Index);
+                yieldAmt = yieldAmt + buildingYield;
+            end
+        end
+
+		if yieldAmt > 0 then
+			local clampedYieldAmount:number = yieldAmt > 5 and 5 or yieldAmt;
+			local yieldType:string = YIELD_VARIATION_MAP[row.YieldType] .. clampedYieldAmount;
+			local plots:table = yields[yieldType];
+			if plots == nil then
+				plots = { data = {}, variations = {}, yieldType=row.YieldType };
+				yields[yieldType] = plots;
+			end
+			table.insert(plots.data, plotId);
+
+			-- Variations are used to overlay a number from 6 - 12 on top of largest yield icon (5)
+			if yieldAmt > 5 then
+				if yieldAmt > 11 then
+					table.insert(plots.variations, { YIELD_VARIATION_MANY, plotId });
+				else
+					table.insert(plots.variations, { YIELD_NUMBER_VARIATION .. yieldAmt, plotId });
+				end
+			end
+		end
+	end
+end
+--]]
+
+-- ===========================================================================
 --  CQUI modified OnDistrictAddedToMap function
 --  Update citizens, data and real housing for close cities within 4 tiles when city founded
 --  we use it only to update real housing for a city that loses a 3rd radius tile to a city that is founded within 4 tiles
