@@ -3,20 +3,43 @@ include("GameCapabilities");
 -- ===========================================================================
 -- Cached Base Functions
 -- ===========================================================================
+BASE_CQUI_AddActionButton = AddActionButton;
 BASE_CQUI_VIEW = View;
 BASE_CQUI_Refresh = Refresh;
 BASE_CQUI_GetUnitActionsTable = GetUnitActionsTable;
+BASE_CQUI_BuildActionModHook = BuildActionModHook;
 BASE_CQUI_OnInterfaceModeChanged = OnInterfaceModeChanged;
 
 -- ===========================================================================
 -- CQUI Members
 -- ===========================================================================
+local m_HexColoringGreatPeople = UILens.CreateLensLayerHash("Hex_Coloring_Great_People");
 local CQUI_ShowImprovementsRecommendations :boolean = false;
+
 function CQUI_OnSettingsUpdate()
     CQUI_ShowImprovementsRecommendations = GameConfiguration.GetValue("CQUI_ShowImprovementsRecommendations") == 1
 end
+
 LuaEvents.CQUI_SettingsUpdate.Add(CQUI_OnSettingsUpdate);
 LuaEvents.CQUI_SettingsInitialized.Add(CQUI_OnSettingsUpdate);
+
+-- ===========================================================================
+--  CQUI modified AddActionButton
+-- ===========================================================================
+function AddActionButton( instance:table, action:table )
+    -- Clear the button callbacks to prepare for our additions
+    instance.UnitActionButton:ClearCallback(Mouse.eMouseEnter);
+    instance.UnitActionButton:ClearCallback(Mouse.eMouseExit);
+
+    -- Base function
+    BASE_CQUI_AddActionButton(instance, action);
+
+    -- Change the callback for the mouse entering the action button
+    if (action.userTag == UnitOperationTypes.REMOVE_FEATURE or action.userTag == UnitOperationTypes.HARVEST_RESOURCE) then
+        instance.UnitActionButton:RegisterCallback( Mouse.eMouseEnter, function() UI.PlaySound("Main_Menu_Mouse_Over"); ActionButtonMouseEnter() end);
+        instance.UnitActionButton:RegisterCallback( Mouse.eMouseExit, function() ActionButtonMouseExit(); end);
+    end
+end
 
 -- ===========================================================================
 --  CQUI modified View functiton : check if we should show the recommanded action
@@ -127,6 +150,70 @@ function OnInterfaceModeChanged( eOldMode:number, eNewMode:number )
         and ((eNewMode == InterfaceModeTypes.CITY_RANGE_ATTACK or eNewMode == InterfaceModeTypes.DISTRICT_RANGE_ATTACK)
         or (eNewMode == InterfaceModeTypes.SELECTION and UI.GetHeadSelectedUnit()))) then
             ContextPtr:SetHide(false);
+    end
+end
+
+-- ===========================================================================
+--  CQUI modified BuildActionModHook
+-- ===========================================================================
+function BuildActionModHook(instance:table, action:table)
+    -- Clear the button callbacks to prepare for our additions
+    instance.UnitActionButton:ClearCallback(Mouse.eMouseEnter);
+    instance.UnitActionButton:ClearCallback(Mouse.eMouseExit);
+
+    -- Base function
+    BASE_CQUI_BuildActionModHook(instance, action);
+
+    -- Change the callback for the mouse entering the action button
+    if (action.userTag == UnitOperationTypes.REMOVE_FEATURE or action.userTag == UnitOperationTypes.HARVEST_RESOURCE) then
+        instance.UnitActionButton:RegisterCallback( Mouse.eMouseEnter, function() ActionButtonMouseEnter() end);
+        instance.UnitActionButton:RegisterCallback( Mouse.eMouseExit, function() ActionButtonMouseExit(); end);
+    end
+end
+
+-- ===========================================================================
+--  CQUI ActionButtonMouseEnter
+-- ===========================================================================
+function ActionButtonMouseEnter()
+    -- Clear the highlighted tile
+    UILens.ClearLayerHexes(m_HexColoringGreatPeople);
+    if UILens.IsLayerOn(m_HexColoringGreatPeople) then
+        UILens.ToggleLayerOff(m_HexColoringGreatPeople);
+    end
+
+    -- Get the selected unit
+    local unit = UI.GetHeadSelectedUnit();
+
+    -- Verify the unit exists
+    if (unit == nil) then
+        return;
+    end
+
+    -- Get the city the unit is currently in
+    local plot:table = Map.GetPlot(unit:GetX(), unit:GetY());
+    local m_city = Cities.GetPlotPurchaseCity(plot);
+
+    -- Verify that the city exists
+    if (m_city == nil) then
+        return;
+    end
+
+    local pCityPlot:table = Map.GetPlot(m_city:GetX(), m_city:GetY());
+    local plotIndex = pCityPlot:GetIndex();
+
+    local playerID :number = Game.GetLocalPlayer();
+    UILens.SetLayerHexesArea(m_HexColoringGreatPeople, playerID, {}, {{"Great_People", plotIndex}});
+    UILens.ToggleLayerOn(m_HexColoringGreatPeople);
+end
+
+-- ===========================================================================
+--  CQUI ActionButtonMouseExit
+-- ===========================================================================
+function ActionButtonMouseExit()
+    -- Clear the highlighted tile
+    UILens.ClearLayerHexes(m_HexColoringGreatPeople);
+    if UILens.IsLayerOn(m_HexColoringGreatPeople) then
+        UILens.ToggleLayerOff(m_HexColoringGreatPeople);
     end
 end
 

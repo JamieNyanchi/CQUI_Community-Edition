@@ -16,6 +16,7 @@ BASE_Refresh = Refresh;
 BASE_OnNotificationPanelChooseProduction = OnNotificationPanelChooseProduction;
 BASE_OnCityBannerManagerProductionToggle = OnCityBannerManagerProductionToggle;
 BASE_CQUI_ZoneDistrict = ZoneDistrict;
+BASE_CQUI_RefreshQueue = RefreshQueue;
 
 -- ===========================================================================
 -- CQUI Members
@@ -28,6 +29,7 @@ local CQUI_ShowProductionRecommendations :boolean = false;
 local CQUI_ManagerShowing = false;
 local m_AdjacencyBonusDistricts : number = UILens.CreateLensLayerHash("Adjacency_Bonus_Districts");
 local m_Districts : number = UILens.CreateLensLayerHash("Districts");
+local m_isTutorialRunning : boolean = false;
 
 function CQUI_OnSettingsUpdate()
     CQUI_ProductionQueue = GameConfiguration.GetValue("CQUI_ProductionQueue");
@@ -511,6 +513,10 @@ function Close()
         return;
     end
 
+    -- Make sure to clear the district lens layers
+    UILens.ClearLayerHexes( m_AdjacencyBonusDistricts );
+    UILens.ClearLayerHexes( m_Districts );
+
     if (not Controls.SlideIn:IsReversing()) then -- Need to check to make sure that we have not already begun the transition before attempting to close the panel.
         UI.PlaySound("Production_Panel_Closed");
         Controls.SlideIn:Reverse();
@@ -634,7 +640,139 @@ function CreateCorrectTabs()
 end
 
 -- ===========================================================================
+--    CQUI modified RefreshQueue
+-- ===========================================================================
+function RefreshQueue(playerID, cityID)
+    if (m_isTutorialRunning) then
+        return;
+    end
+
+    -- Base function
+    BASE_CQUI_RefreshQueue(playerID, cityID);
+
+    -- Change the callback for the mouse entering the queue item
+    for i,ctrl in pairs(Controls.QueueStack:GetChildren()) do
+        if (ctrl:GetID() == "Top") then
+            ctrl:ClearCallback(Mouse.eMouseEnter);
+            ctrl:RegisterCallback( Mouse.eMouseEnter, function() QueueItemMouseEnter(i); end);
+            ctrl:RegisterCallback( Mouse.eMouseExit, function() QueueItemMouseExit(i); end);
+        end
+    end
+end
+
+-- ===========================================================================
+--    CQUI QueueItemMouseEnter
+-- ===========================================================================
+function QueueItemMouseEnter(index:number)
+    -- Base game plays this sound on mouse enter
+    UI.PlaySound("Main_Menu_Mouse_Over");
+
+    -- Exit if currently in District/Building placement mode
+    -- We don't want to mess with the highlighted tiles in this case
+    local mode = UI.GetInterfaceMode();
+    if (mode == InterfaceModeTypes.DISTRICT_PLACEMENT or mode == InterfaceModeTypes.BUILDING_PLACEMENT) then
+        return;
+    end
+
+    -- Make sure the lens layers are cleared
+    UILens.ClearLayerHexes( m_AdjacencyBonusDistricts );
+    UILens.ClearLayerHexes( m_Districts );
+
+    -- Get the city for the queue
+    local pCity:table = UI.GetHeadSelectedCity();
+    if pCity == nil then
+        return;
+    end
+
+    -- Get the build queue and the entry
+    local pBuildQueue:table = pCity:GetBuildQueue();
+    local entry:table = pBuildQueue:GetAt(index);
+
+    -- Return if there is no valid entry or if the Directive isn't ZONE or CONSTRUCT
+    if (not entry or (entry.Directive ~= CityProductionDirectives.ZONE and entry.Directive ~= CityProductionDirectives.CONSTRUCT)) then
+        return;
+    end
+
+    -- entry.Location will exist, but may have invalid coordinates (-9999, -9999) under some circumstances
+    -- If the coordinates are valid, we are done. Otherwise, we have more work to do
+    local plot = Map.GetPlot(entry.Location.x, entry.Location.y);
+
+    if (not plot) then
+        -- Get a list of districts in the city
+        local pCityDistricts = pCity:GetDistricts();
+
+        if (entry.DistrictType) then
+            local district = pCityDistricts:GetDistrict(entry.DistrictType);
+            
+            -- If the district is under construction, this must be the right one
+            -- If not, then we still have to find the right district
+            -- This may be the case for districts that can be built multiple times, such as Neighborhoods
+            if (district:IsComplete()) then
+                for i, element in pCityDistricts:Members() do
+                    if (element:GetType() == entry.DistrictType and not element:IsComplete()) then
+                        district = element;
+                        break;
+                    end
+                end
+            end
+
+            -- Get the plot
+            plot = Map.GetPlot(district:GetX(), district:GetY());
+        elseif (entry.BuildingType) then
+            local building = GameInfo.Buildings[entry.BuildingType];
+            local district = pCityDistricts:GetDistrict(building.PrereqDistrict);
+
+            -- Wonders do not have a PrereqDistrict, so we still have to find the right plot
+            if (building.IsWonder) then
+                for i, element in pCityDistricts:Members() do
+                    local elementType = GameInfo.Districts[element:GetType()].DistrictType;
+                    if (elementType == "DISTRICT_WONDER") then
+                        if (Map.GetPlot(element:GetX(), element:GetY()):GetWonderType() == entry.BuildingType) then
+                            district = element;
+                            break;
+                        end
+                    end
+                end
+            end
+
+            -- Get the plot if the district exists
+            if (district) then
+                plot = Map.GetPlot(district:GetX(), district:GetY());
+            end
+        else
+            -- Both the DistrictType and BuildingType are invalid, so just return
+            return;
+        end
+    end
+
+    -- If the plot is still invalid, then just return
+    if (not plot) then
+        return;
+    end
+
+    -- Highlight the plot for the queue entry
+    UILens.SetAdjacencyBonusDistict( plot:GetIndex(), "Placement_Valid", {} );
+    UILens.FocusHex( m_Districts, plot:GetIndex(), "Placement_Valid" );
+end
+
+-- ===========================================================================
+--    CQUI QueueItemMouseExit
+-- ===========================================================================
+function QueueItemMouseExit(index:number)
+    local mode = UI.GetInterfaceMode();
+    if (mode == InterfaceModeTypes.DISTRICT_PLACEMENT or mode == InterfaceModeTypes.BUILDING_PLACEMENT) then
+        return;
+    end
+
+    UILens.ClearLayerHexes( m_AdjacencyBonusDistricts );
+    UILens.ClearLayerHexes( m_Districts );
+end
+
+-- ===========================================================================
 function Initialize_ProductionPanel_CQUI()
+    -- Cache tutorial status
+    m_isTutorialRunning = IsTutorialRunning();
+
     Events.InterfaceModeChanged.Remove( BASE_OnInterfaceModeChanged );
     Events.InterfaceModeChanged.Add( OnInterfaceModeChanged );
     Events.CityMadePurchase.Add( function() Refresh(); end);
@@ -648,6 +786,8 @@ function Initialize_ProductionPanel_CQUI()
     Controls.CloseButton:ClearCallback(Mouse.eLClick);
     Controls.CloseButton:RegisterCallback(Mouse.eLClick, OnClose);
     Controls.CQUI_ShowManagerButton:RegisterCallback(Mouse.eLClick, CQUI_ToggleManager);
+    Controls.CurrentProductionButton:RegisterCallback( Mouse.eMouseEnter, function() QueueItemMouseEnter(0); end);
+    Controls.CurrentProductionButton:RegisterCallback( Mouse.eMouseExit, function() QueueItemMouseExit(0); end);
 
     LuaEvents.CQUI_ProductionPanel_CityviewEnable.Add( CQUI_OnCityviewEnabled);
     LuaEvents.CQUI_ProductionPanel_CityviewDisable.Add( CQUI_OnCityviewDisabled);
