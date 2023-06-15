@@ -40,6 +40,7 @@ local m_TradeRoutes:table = {} -- Routes showm, this is the filtered and sorted
 local m_TurnBuiltRouteTable:number = -1;
 local m_LastTrader:number = -1;
 local m_RebuildAvailableRoutes:boolean = true;
+local m_PlotVisibilityChanged:boolean = true;
 
 -- Stores filter list and tracks the currently selected list
 local m_filterList:table = {};
@@ -91,7 +92,7 @@ function Refresh()
     end
 
     -- Rebuild if turn has advanced or unit has changed
-    if m_LastTrader ~= selectedUnit:GetID() or m_TurnBuiltRouteTable < Game.GetCurrentGameTurn() then
+    if m_LastTrader ~= selectedUnit:GetID() or m_TurnBuiltRouteTable < Game.GetCurrentGameTurn() or m_PlotVisibilityChanged then
         m_LastTrader = selectedUnit:GetID()
         -- Rebuild and re-sort
         m_RebuildAvailableRoutes = true
@@ -304,6 +305,7 @@ function RefreshChooserPanel()
         CacheRoutesInfo(m_AvailableTradeRoutes)
 
         m_TurnBuiltRouteTable = Game.GetCurrentGameTurn()
+        m_PlotVisibilityChanged = false;
         m_RebuildAvailableRoutes = false -- done building routes
     else
         if opt_print then
@@ -1338,6 +1340,19 @@ function OnPolicyChanged( ePlayer )
     end
 end
 
+function OnPlotVisibilityChanged(plotX:number, plotY:number, visibilityType:number)
+    -- Make sure we're the local player and not observing
+    if playerID ~= Game.GetLocalPlayer() or playerID == -1 then
+        return;
+    end
+
+    m_PlotVisibilityChanged = true;
+
+    if not ContextPtr:IsHidden() then
+        Refresh();
+    end
+end
+
 -- ===========================================================================
 --  Input
 --  UI Event Handler
@@ -1432,6 +1447,7 @@ function Initialize()
     Events.LocalPlayerTurnEnd.Add( OnLocalPlayerTurnEnd );
     Events.GovernmentPolicyChanged.Add( OnPolicyChanged );
     Events.GovernmentPolicyObsoleted.Add( OnPolicyChanged );
+    Events.PlotVisibilityChanged.Add( OnPlotVisibilityChanged );
 
     -- Control Events
     InitButton(Controls.BeginRouteButton, RequestTradeRoute)
