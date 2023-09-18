@@ -735,8 +735,10 @@ function QueueItemMouseEnter(index:number)
                 end
             end
 
-            -- Get the plot
-            plot = Map.GetPlot(district:GetX(), district:GetY());
+            -- Get the plot if the district exists
+            if (district) then
+                plot = Map.GetPlot(district:GetX(), district:GetY());
+            end
         else
             -- Both the DistrictType and BuildingType are invalid, so just return
             return;
