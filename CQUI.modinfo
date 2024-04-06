@@ -364,6 +364,7 @@
 
         <ImportFiles id="CQUI_IMPORT_FILES_PRODUCTIONPANEL">
             <Items>
+                <File>Assets/UI/Panels/productionpanel_CQUI.lua</File>
                 <File>Assets/UI/productionpanel.xml</File>
             </Items>
         </ImportFiles>
